@@ -342,7 +342,7 @@ end
 doc(f::Base.Callable, args::Any...) = doc(f, Tuple{args...})
 
 function typesummary(T::DataType)
-    parts = UTF8String[
+    parts = String[
     """
     **Summary:**
     ```julia
