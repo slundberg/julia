@@ -63,10 +63,33 @@ function tryparse_internal{S<:ByteString}(::Type{Bool}, sbuff::S, startpos::Int,
     Nullable{Bool}()
 end
 
-safe_add{T<:Integer}(n1::T, n2::T) = ((n2 > 0) ? (n1 > (typemax(T) - n2)) : (n1 < (typemin(T) - n2))) ? Nullable{T}() : Nullable{T}(n1 + n2)
-safe_mul{T<:Integer}(n1::T, n2::T) = ((n2 >   0) ? ((n1 > div(typemax(T),n2)) || (n1 < div(typemin(T),n2))) :
-                                      (n2 <  -1) ? ((n1 > div(typemin(T),n2)) || (n1 < div(typemax(T),n2))) :
-                                      ((n2 == -1) && n1 == typemin(T))) ? Nullable{T}() : Nullable{T}(n1 * n2)
+
+for I in [Int8,Int16,Int32,Int64,Int128,
+          UInt8,UInt16,UInt32,UInt64,UInt128]
+
+    s = I <: Signed ? 's' : 'u'
+    b = sizeof(I) << 3
+    r = b == 8 ? "[2 x i8]" : "{ i$b, i8 }" # LLVM return type
+
+    for op in [:add,:sub,:mul]
+        f = symbol(:safe_,op)
+        @eval @inline function $f(x::$I, y::$I)
+            x,n = Base.llvmcall((
+            $"declare { i$b, i1 } @llvm.$(s)$(op).with.overflow.i$b(i$b, i$b)",
+            $"""
+            %xo = call { i$b, i1 } @llvm.$(s)$(op).with.overflow.i$b(i$b %0, i$b %1)
+            %x  = extractvalue { i$b, i1 } %xo, 0
+            %o1 = extractvalue { i$b, i1 } %xo, 1
+            %o8 = zext i1 %o1 to i8
+            %rx = insertvalue $r undef, i$b %x, 0
+            %r  = insertvalue $r %rx, i8 %o8, 1
+            ret $r %r"""),
+            Tuple{$I,Bool},Tuple{$I,$I},x,y)
+            Nullable(x,n)
+        end
+    end
+end
+
 
 function tryparse_internal{T<:Integer}(::Type{T}, s::AbstractString, startpos::Int, endpos::Int, base::Int, a::Int, raise::Bool)
     _n = Nullable{T}()
