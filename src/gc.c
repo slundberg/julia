@@ -336,6 +336,7 @@ static arraylist_t to_finalize;
 static gcpage_t *page_metadata(void *data);
 static void pre_mark(void);
 static void post_mark(arraylist_t *list, int dryrun);
+static void gc_mark_object_list(arraylist_t *list);
 static region_t *find_region(void *ptr, int maybe);
 
 #define PAGE_INDEX(region, data)              \
@@ -348,6 +349,23 @@ NOINLINE static uintptr_t gc_get_stack_ptr(void)
     // The mask is to suppress the compiler warning about returning
     // address of local variable
     return (uintptr_t)&dummy & ~(uintptr_t)15;
+}
+
+static inline void gc_big_object_unlink(const bigval_t *hdr)
+{
+    *hdr->prev = hdr->next;
+    if (hdr->next) {
+        hdr->next->prev = hdr->prev;
+    }
+}
+
+static inline void gc_big_object_link(bigval_t *hdr, bigval_t **list)
+{
+    hdr->next = *list;
+    hdr->prev = list;
+    if (*list)
+        (*list)->prev = &hdr->next;
+    *list = hdr;
 }
 
 #include "gc-debug.c"
@@ -726,14 +744,8 @@ static inline int gc_setmark_big(void *o, int mark_mode)
         mark_mode = GC_MARKED;
     if ((mark_mode == GC_MARKED) & (bits != GC_MARKED)) {
         // Move hdr from big_objects list to big_objects_marked list
-        *hdr->prev = hdr->next;
-        if (hdr->next)
-            hdr->next->prev = hdr->prev;
-        hdr->next = big_objects_marked;
-        hdr->prev = &big_objects_marked;
-        if (big_objects_marked)
-            big_objects_marked->prev = &hdr->next;
-        big_objects_marked = hdr;
+        gc_big_object_unlink(hdr);
+        gc_big_object_link(hdr, &big_objects_marked);
     }
     if (!(bits & GC_MARKED)) {
         if (mark_mode == GC_MARKED)
@@ -994,13 +1006,8 @@ static NOINLINE void *alloc_big(size_t sz)
     v->sz = allocsz;
     v->flags = 0;
     v->age = 0;
-    FOR_CURRENT_HEAP () {
-        v->next = big_objects;
-        v->prev = &big_objects;
-        if (v->next)
-            v->next->prev = &v->next;
-        big_objects = v;
-    }
+    FOR_CURRENT_HEAP ()
+        gc_big_object_link(v, &big_objects);
     return (void*)&v->header;
 }
 
@@ -1746,6 +1753,12 @@ NOINLINE static void gc_mark_task(jl_task_t *ta, int d)
     gc_mark_task_stack(ta, d);
 }
 
+static void gc_mark_object_list(arraylist_t *list)
+{
+    for (size_t i = 0;i < list->len;i++) {
+        gc_push_root(list->items[i], 0);
+    }
+}
 
 // for chasing down unwanted references
 /*
@@ -1995,11 +2008,6 @@ static void pre_mark(void)
     if (jl_module_init_order != NULL)
         gc_push_root(jl_module_init_order, 0);
 
-    // objects currently being finalized
-    for(i=0; i < to_finalize.len; i++) {
-        gc_push_root(to_finalize.items[i], 0);
-    }
-
     jl_mark_box_caches();
     //gc_push_root(jl_unprotect_stack_func, 0);
     gc_push_root(jl_typetype_type, 0);
@@ -2188,9 +2196,9 @@ static void _jl_gc_collect(int full, char *stack_hi)
 #endif
             // 4. check for objects to finalize
             post_mark(&finalizer_list, 0);
-            if (prev_sweep_mask == GC_MARKED) {
+            if (prev_sweep_mask == GC_MARKED)
                 post_mark(&finalizer_list_marked, 0);
-            }
+            gc_mark_object_list(&to_finalize);
 #if defined(GC_TIME) || defined(GC_FINAL_STATS)
             post_time = jl_hrtime() - post_time;
 #endif
