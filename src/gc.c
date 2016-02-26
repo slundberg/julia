@@ -335,9 +335,9 @@ static arraylist_t to_finalize;
 
 static gcpage_t *page_metadata(void *data);
 static void pre_mark(void);
-static void post_mark(arraylist_t *list, int dryrun);
-static void gc_mark_object_list(arraylist_t *list);
+static void gc_mark_object_list(arraylist_t *list, size_t start);
 static region_t *find_region(void *ptr, int maybe);
+static void visit_mark_stack(int mark_mode);
 
 #define PAGE_INDEX(region, data)              \
     ((GC_PAGE_DATA((data) - GC_PAGE_OFFSET) - \
@@ -679,6 +679,11 @@ static uint64_t total_mark_time = 0;
 static uint64_t total_fin_time = 0;
 #endif
 static int sweeping = 0;
+// Resetting the object to a young object, this is used when marking the
+// finalizer list to collect them the next time because the object is very
+// likely dead. This also won't break the GC invariance since these object
+// are not reachable from anywhere else
+static int mark_reset_age = 0;
 
 /*
  * The state transition looks like :
@@ -740,12 +745,23 @@ static inline int gc_setmark_big(void *o, int mark_mode)
     assert(find_region(o,1) == NULL);
     bigval_t *hdr = bigval_header(o);
     int bits = gc_bits(o);
-    if (bits == GC_QUEUED || bits == GC_MARKED)
-        mark_mode = GC_MARKED;
-    if ((mark_mode == GC_MARKED) & (bits != GC_MARKED)) {
-        // Move hdr from big_objects list to big_objects_marked list
+    if (mark_reset_age && !(bits & GC_MARKED)) {
+        // Reset the object as if it was just allocated
+        hdr->age = 0;
         gc_big_object_unlink(hdr);
-        gc_big_object_link(hdr, &big_objects_marked);
+        FOR_CURRENT_HEAP ()
+            gc_big_object_link(hdr, &big_objects);
+        bits = GC_CLEAN;
+        mark_mode = GC_MARKED_NOESC;
+    }
+    else {
+        if (bits == GC_QUEUED || bits == GC_MARKED)
+            mark_mode = GC_MARKED;
+        if ((mark_mode == GC_MARKED) & (bits != GC_MARKED)) {
+            // Move hdr from big_objects list to big_objects_marked list
+            gc_big_object_unlink(hdr);
+            gc_big_object_link(hdr, &big_objects_marked);
+        }
     }
     if (!(bits & GC_MARKED)) {
         if (mark_mode == GC_MARKED)
@@ -770,7 +786,17 @@ static inline int gc_setmark_pool(void *o, int mark_mode)
 #endif
     gcpage_t *page = page_metadata(o);
     int bits = gc_bits(o);
-    if (bits == GC_QUEUED || bits == GC_MARKED) {
+    if (mark_reset_age && !(bits & GC_MARKED)) {
+        // Reset the object as if it was just allocated
+        bits = GC_CLEAN;
+        mark_mode = GC_MARKED_NOESC;
+        page->allocd = 1;
+        char *page_begin = GC_PAGE_DATA(o) + GC_PAGE_OFFSET;
+        int obj_id = (((char*)o) - page_begin) / page->osize;
+        uint8_t *ages = page->ages + obj_id / 8;
+        *ages &= ~(1 << (obj_id % 8));
+    }
+    else if (bits == GC_QUEUED || bits == GC_MARKED) {
         mark_mode = GC_MARKED;
     }
     if (!(bits & GC_MARKED)) {
@@ -1753,9 +1779,9 @@ NOINLINE static void gc_mark_task(jl_task_t *ta, int d)
     gc_mark_task_stack(ta, d);
 }
 
-static void gc_mark_object_list(arraylist_t *list)
+static void gc_mark_object_list(arraylist_t *list, size_t start)
 {
-    for (size_t i = 0;i < list->len;i++) {
+    for (size_t i = start;i < list->len;i++) {
         gc_push_root(list->items[i], 0);
     }
 }
@@ -2022,16 +2048,16 @@ static void pre_mark(void)
 
 // find unmarked objects that need to be finalized from the finalizer list "list".
 // this must happen last in the mark phase.
-// if dryrun == 1, it does not schedule any actual finalization and only marks finalizers
-static void post_mark(arraylist_t *list, int dryrun)
+static void post_mark(arraylist_t *list)
 {
     for(size_t i=0; i < list->len; i+=2) {
         jl_value_t *v = (jl_value_t*)list->items[i];
         jl_value_t *fin = (jl_value_t*)list->items[i+1];
         int isfreed = !gc_marked(jl_astaggedvalue(v));
-        gc_push_root(fin, 0);
-        int isold = list == &finalizer_list && gc_bits(jl_astaggedvalue(v)) == GC_MARKED && gc_bits(jl_astaggedvalue(fin)) == GC_MARKED;
-        if (!dryrun && (isfreed || isold)) {
+        int isold = (list == &finalizer_list &&
+                     gc_bits(jl_astaggedvalue(v)) == GC_MARKED &&
+                     gc_bits(jl_astaggedvalue(fin)) == GC_MARKED);
+        if (isfreed || isold) {
             // remove from this list
             if (i < list->len - 2) {
                 list->items[i] = list->items[list->len-2];
@@ -2044,19 +2070,20 @@ static void post_mark(arraylist_t *list, int dryrun)
             // schedule finalizer or execute right away if it is not julia code
             if (gc_typeof(fin) == (jl_value_t*)jl_voidpointer_type) {
                 void *p = jl_unbox_voidpointer(fin);
-                if (!dryrun && p)
+                if (p)
                     ((void (*)(void*))p)(jl_data_ptr(v));
                 continue;
             }
             gc_push_root(v, 0);
-            if (!dryrun) schedule_finalization(v, fin);
+            schedule_finalization(v, fin);
         }
-        if (!dryrun && isold) {
+        if (isold) {
+            // The caller relies on the new objects to be pushed to the end of
+            // the list!!
             arraylist_push(&finalizer_list_marked, v);
             arraylist_push(&finalizer_list_marked, fin);
         }
     }
-    visit_mark_stack(GC_MARKED_NOESC);
 }
 
 // collector entry point and control
@@ -2195,10 +2222,27 @@ static void _jl_gc_collect(int full, char *stack_hi)
             post_time = jl_hrtime();
 #endif
             // 4. check for objects to finalize
-            post_mark(&finalizer_list, 0);
-            if (prev_sweep_mask == GC_MARKED)
-                post_mark(&finalizer_list_marked, 0);
-            gc_mark_object_list(&to_finalize);
+            // Record the length of the marked list since we need to
+            // mark the object moved to the marked list from the
+            // `finalizer_list` by `post_mark`
+            size_t orig_marked_len = finalizer_list_marked.len;
+            post_mark(&finalizer_list);
+            if (prev_sweep_mask == GC_MARKED) {
+                post_mark(&finalizer_list_marked);
+                orig_marked_len = 0;
+            }
+            gc_mark_object_list(&finalizer_list, 0);
+            gc_mark_object_list(&finalizer_list_marked, orig_marked_len);
+            // "Flush" the mark stack before flipping the reset_age bit
+            // so that the objects are not incorrectly resetted.
+            visit_mark_stack(GC_MARKED_NOESC);
+            mark_reset_age = 1;
+            // Reset the age and old bit for any non-marked objects in the
+            // `to_finalize` list. Any objects that are in this list
+            // should not be reachable from any old objects.
+            gc_mark_object_list(&to_finalize, 0);
+            visit_mark_stack(GC_MARKED_NOESC);
+            mark_reset_age = 0;
 #if defined(GC_TIME) || defined(GC_FINAL_STATS)
             post_time = jl_hrtime() - post_time;
 #endif
