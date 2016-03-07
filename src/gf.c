@@ -407,7 +407,7 @@ void jl_type_infer(jl_lambda_info_t *li, jl_value_t *toplevel)
         fargs[2] = (jl_value_t*)toplevel;
 #ifdef TRACE_INFERENCE
         jl_printf(JL_STDERR,"inference on ");
-        jl_static_show_func_sig(JL_STDERR, (jl_value_t*)argtypes);
+        jl_static_show_func_sig(JL_STDERR, (jl_value_t*)li->specTypes);
         jl_printf(JL_STDERR, "\n");
 #endif
         jl_value_t *info = jl_apply(fargs, 3); (void)info;
