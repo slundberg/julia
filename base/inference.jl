@@ -147,7 +147,7 @@ type InferenceState
 
         # exception handlers
         cur_hand = ()
-        handler_at = Any[ 0 for i=1:n ]
+        handler_at = Any[ () for i=1:n ]
         n_handlers = 0
 
         W = IntSet()
@@ -1444,33 +1444,22 @@ end
 tchanged(n::ANY, o::ANY) = is(o,NF) || (!is(n,NF) && !(n <: o))
 schanged(n::ANY, o::ANY) = is(o,NF) || (!is(n,NF) && !issubstate(n, o))
 
-stupdate(state::Tuple{}, changes::VarTable, vars) = copy(changes)
-stupdate(state::Tuple{}, changes::StateUpdate, vars) = stupdate(ObjectIdDict(), changes, vars)
+stupdate(state::Tuple{}, changes::VarTable, vars::Array{Any,1}) = copy(changes)
+stupdate(state::Tuple{}, changes::StateUpdate, vars::Array{Any,1}) = (newstate = ObjectIdDict(); stupdate(newstate, changes, vars); newstate)
 
-function stupdate(state::VarTable, changes::Union{StateUpdate,VarTable}, vars)
+function stupdate(state::VarTable, changes::Union{StateUpdate,VarTable}, vars::Array{Any,1})
+    newstate = false
     for i = 1:length(vars)
         v = vars[i]
         newtype = changes[v]
         oldtype = get(state::ObjectIdDict,v,NF)
         if schanged(newtype, oldtype)
-            state[v] = smerge(oldtype, newtype)
+            newstate = state
+            newstate[v] = smerge(oldtype, newtype)
         end
     end
-    state
+    return newstate
 end
-
-function stchanged(new::Union{StateUpdate,VarTable}, old, vars)
-    if is(old,())
-        return true
-    end
-    for v in vars
-        if schanged(new[v], get(old,v,NF))
-            return true
-        end
-    end
-    return false
-end
-
 
 #### helper functions for typeinf initialization and looping ####
 
@@ -1749,11 +1738,7 @@ function typeinf_frame(frame)
             delete!(W, pc)
             frame.currpc = pc
             frame.static_typeof = false
-            if frame.handler_at[pc] === 0
-                frame.handler_at[pc] = frame.cur_hand
-            else
-                frame.cur_hand = frame.handler_at[pc]
-            end
+            frame.cur_hand = frame.handler_at[pc]
             stmt = frame.body[pc]
             changes = abstract_interpret(stmt, s[pc]::ObjectIdDict, frame)
             if changes === ()
@@ -1766,9 +1751,10 @@ function typeinf_frame(frame)
             if frame.cur_hand !== ()
                 # propagate type info to exception handler
                 l = frame.cur_hand[1]
-                if stchanged(changes, s[l], frame.vars)
+                newstate = stupdate(s[l], changes, frame.vars)
+                if newstate !== false
                     push!(W, l)
-                    s[l] = stupdate(s[l], changes, frame.vars)
+                    s[l] = newstate
                 end
             end
             pc´ = pc+1
@@ -1801,10 +1787,11 @@ function typeinf_frame(frame)
                     else
                         # general case
                         frame.handler_at[l] = frame.cur_hand
-                        if stchanged(changes, s[l], frame.vars)
+                        newstate = stupdate(s[l], changes, frame.vars)
+                        if newstate !== false
                             # add else branch to active IP list
                             push!(W, l)
-                            s[l] = stupdate(s[l], changes, frame.vars)
+                            s[l] = newstate
                         end
                     end
                 elseif is(hd, :type_goto)
@@ -1847,10 +1834,10 @@ function typeinf_frame(frame)
                     # propagate type info to exception handler
                     l = frame.cur_hand[1]
                     old = s[l]
-                    new = s[pc]::ObjectIdDict
-                    if old === () || stchanged(new, old::ObjectIdDict, frame.vars)
+                    newstate = stupdate(old, s[pc]::ObjectIdDict, frame.vars)
+                    if newstate !== false
                         push!(W, l)
-                        s[l] = stupdate(old, new, frame.vars)
+                        s[l] = newstate
                     end
 #                        if frame.handler_at[l] === 0
 #                            frame.n_handlers += 1
@@ -1869,9 +1856,11 @@ function typeinf_frame(frame)
                     end
                 end
             end
-            if pc´<=n && (frame.handler_at[pc´] = frame.cur_hand; true) &&
-               stchanged(changes, s[pc´], frame.vars)
-                s[pc´] = stupdate(s[pc´], changes, frame.vars)
+            pc´ > n && break # can't proceed with the fast-path fall-through
+            frame.handler_at[pc´] = frame.cur_hand
+            newstate = stupdate(s[pc´], changes, frame.vars)
+            if newstate !== false
+                s[pc´] = newstate
                 pc = pc´
             elseif pc´ in W
                 pc = pc´
