@@ -414,7 +414,7 @@ LLVM_FLAGS += --enable-libcpp
 endif # USE_LIBCPP
 ifeq ($(OS), WINNT)
 LLVM_FLAGS += --with-extra-ld-options="-Wl,--stack,8388608" LDFLAGS=""
-LLVM_CPPFLAGS += -D__USING_SJLJ_EXCEPTIONS__ -D__CRT__NO_INLINE
+LLVM_CPPFLAGS += -D__USING_SJLJ_EXCEPTIONS__ -D__CRT__NO_INLINE -DMINGW_HAS_SECURE_API=1
 ifneq ($(BUILD_OS),WINNT)
 LLVM_CMAKE += -DCROSS_TOOLCHAIN_FLAGS_NATIVE=-DCMAKE_TOOLCHAIN_FILE=$(SRCDIR)/NATIVE.cmake
 endif # BUILD_OS != WINNT
@@ -720,6 +720,12 @@ $(eval $(call LLVM_PATCH,llvm-3.7.1_2))
 $(eval $(call LLVM_PATCH,llvm-3.7.1_3))
 $(eval $(call LLVM_PATCH,llvm-D14260))
 $(LLVM_SRC_DIR)/llvm-3.7.1_2.patch-applied: $(LLVM_SRC_DIR)/llvm-3.7.1.patch-applied
+else ifeq ($(LLVM_VER),3.8.0)
+$(eval $(call LLVM_PATCH,llvm-3.7.1_3))
+$(eval $(call LLVM_PATCH,llvm-D14260))
+$(eval $(call LLVM_PATCH,llvm-3.8.0_winshlib))
+# Cygwin and openSUSE still use win32-threads mingw, https://llvm.org/bugs/show_bug.cgi?id=26365
+$(eval $(call LLVM_PATCH,llvm-3.8.0_threads))
 endif # LLVM_VER
 
 ifeq ($(LLVM_VER),3.7.1)
