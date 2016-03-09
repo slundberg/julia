@@ -12,7 +12,6 @@ end
 Create a WorkerPool from a vector of worker ids.
 """
 function WorkerPool(workers=Int[])
-
     # Create a shared queue of available workers...
     pool = WorkerPool(RemoteChannel(()->Channel{Int}(128)))
 

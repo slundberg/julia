@@ -387,7 +387,6 @@ Base.next{N}(::GenericIterator{N}, i) = (i, i + 1)
 Base.done{N}(::GenericIterator{N}, i) = i > N ? true : false
 
 function test_map(::Type{TestAbstractArray})
-
     for typ in (Float16, Float32, Float64,
                 Int8, Int16, Int32, Int64, Int128,
                 UInt8, UInt16, UInt32, UInt64, UInt128

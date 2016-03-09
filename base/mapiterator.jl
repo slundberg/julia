@@ -85,7 +85,6 @@ function done(itr::AsyncMapIterator, state::AsyncMapState)
 end
 
 function next(itr::AsyncMapIterator, state::AsyncMapState)
-
     # Wait if the maximum number of concurrent tasks are already running...
     while isbusy(itr, state)
         wait(state)
@@ -152,7 +151,6 @@ function pump_source(itr::StreamMapIterator, state::StreamMapState)
 end
 
 function next(itr::StreamMapIterator, state::StreamMapState)
-
     state.i += 1
 
     results = itr.async_itr.results

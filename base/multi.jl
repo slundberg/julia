@@ -1220,7 +1220,6 @@ function addprocs(manager::ClusterManager; kwargs...)
 end
 
 function addprocs_locked(manager::ClusterManager; kwargs...)
-
     params = merge(default_addprocs_params(), AnyDict(kwargs))
     topology(symbol(params[:topology]))
 
