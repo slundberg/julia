@@ -3844,6 +3844,20 @@ let ary = Vector{Any}(10)
         ccall(:jl_array_grow_beg, Void, (Any, Csize_t), ary, 4)
         check_undef_and_fill(ary, 1:(2n + 4))
     end
+
+    ary = Vector{Any}(100)
+    ccall(:jl_array_grow_end, Void, (Any, Csize_t), ary, 10000)
+    ary[:] = 1:length(ary)
+    ccall(:jl_array_del_beg, Void, (Any, Csize_t), ary, 10000)
+    # grow on the back until a buffer reallocation happens
+    cur_ptr = pointer(ary)
+    while cur_ptr == pointer(ary)
+        len = length(ary)
+        ccall(:jl_array_grow_end, Void, (Any, Csize_t), ary, 10)
+        for i in (len + 1):(len + 10)
+            @test !isdefined(ary, i)
+        end
+    end
 end
 
 # pr #15259
@@ -3901,4 +3915,50 @@ let
     arrayset_unknown_dim(Int, 1)
     arrayset_unknown_dim(Int, 2)
     arrayset_unknown_dim(Int, 3)
+end
+
+# Attempting to change the shape of an shared array should unshare it and
+# not modifying the original data
+let
+    a = Vector{Int}(100)
+    a′ = reshape(reshape(a, (50, 2)), 100)
+    @test_throws ErrorException ccall(:jl_array_del_end, Void, (Any, Csize_t),
+                                      a, 0)
+    @test_throws ErrorException ccall(:jl_array_del_end, Void, (Any, Csize_t),
+                                      a, 1)
+    @test_throws ErrorException ccall(:jl_array_del_beg, Void, (Any, Csize_t),
+                                      a, 0)
+    @test_throws ErrorException ccall(:jl_array_del_beg, Void, (Any, Csize_t),
+                                      a, 1)
+
+    @test pointer(a) == pointer(a′)
+    ccall(:jl_array_del_end, Void, (Any, Csize_t), a′, 0)
+    @test pointer(a) != pointer(a′)
+
+    a′ = reshape(reshape(a, (50, 2)), 100)
+    @test pointer(a) == pointer(a′)
+    ccall(:jl_array_del_end, Void, (Any, Csize_t), a′, 1)
+    @test pointer(a) != pointer(a′)
+
+    a′ = reshape(reshape(a, (50, 2)), 100)
+    @test pointer(a) == pointer(a′)
+    ccall(:jl_array_del_beg, Void, (Any, Csize_t), a′, 0)
+    @test pointer(a) != pointer(a′)
+
+    a′ = reshape(reshape(a, (50, 2)), 100)
+    @test pointer(a) == pointer(a′)
+    ccall(:jl_array_del_beg, Void, (Any, Csize_t), a′, 1)
+    @test pointer(a) != pointer(a′)
+
+    a′ = reshape(reshape(a, (50, 2)), 100)
+    @test pointer(a) == pointer(a′)
+    a[:] = 1:length(a)
+    @test a′ == [1:length(a′);]
+    deleteat!(a′, 10)
+    @test a == [1:length(a);]
+    a′ = reshape(reshape(a, (50, 2)), 100)
+    @test pointer(a) == pointer(a′)
+    @test a′ == [1:length(a′);]
+    deleteat!(a′, 90)
+    @test a == [1:length(a);]
 end
