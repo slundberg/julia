@@ -120,9 +120,6 @@ type InferenceState
 
         gensym_uses = find_gensym_uses(linfo.code)
         gensym_types = linfo.gensymtypes
-        for i = 1:length(gensym_types)
-            gensym_types[i] = NF
-        end
         gensym_init = copy(gensym_types)
 
         # exception handlers
@@ -1501,21 +1498,30 @@ end
 
 # copy a LambdaInfo just enough to make it not share data with li.def
 function unshare_linfo(li::LambdaInfo)
-    if li.nargs == 0
-        return li
+    if li.nargs > 0
+        if li === li.def
+            li = ccall(:jl_copy_lambda_info, Any, (Any,), li)::LambdaInfo
+        end
+        if !isa(li.code, Array{Any,1})
+            li.code = ccall(:jl_uncompress_ast, Any, (Any,Any), li, li.code)
+        elseif li.code === li.def.code && li !== li.def
+            li.code = astcopy(li.code)
+        end
+        li.slotnames = copy(li.slotnames)
+        li.slotflags = copy(li.slotflags)
+        if isa(li.slottypes,Array)
+            li.slottypes = copy(li.slottypes)
+        end
+        if isa(li.gensymtypes,Array)
+            li.gensymtypes = copy(li.gensymtypes)
+        end
     end
-    if li === li.def
-        li = ccall(:jl_copy_lambda_info, Any, (Any,), li)::LambdaInfo
+    if !isa(li.slottypes,Array)
+        li.slottypes = Any[ Any for i = 1:length(li.slotnames) ]
     end
-    if !isa(li.code, Array{Any,1})
-        li.code = ccall(:jl_uncompress_ast, Any, (Any,Any), li, li.code)
-    elseif li.code === li.def.code && li !== li.def
-        li.code = astcopy(li.code)
+    if !isa(li.gensymtypes,Array)
+        li.gensymtypes = Any[ NF for i = 1:(li.gensymtypes::Int) ]
     end
-    li.slotnames = copy(li.slotnames)
-    li.slottypes = copy(li.slottypes)
-    li.slotflags = copy(li.slotflags)
-    li.gensymtypes = copy(li.gensymtypes)
     return li
 end
 

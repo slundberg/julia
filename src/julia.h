@@ -177,9 +177,9 @@ typedef struct _jl_lambda_info_t {
     // (different environments) of a closure.
     jl_array_t *code;  // compressed uint8 array, or Any array of statements
     jl_array_t *slotnames; // names of local variables
-    jl_array_t *slottypes;
+    jl_value_t *slottypes;
     jl_array_t *slotflags;  // local var bit flags
-    jl_array_t *gensymtypes;
+    jl_value_t *gensymtypes;
     jl_value_t *rettype;
     // sparams is a vector of values indexed by symbols
     jl_svec_t *sparam_syms;

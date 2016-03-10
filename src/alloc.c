@@ -309,9 +309,9 @@ JL_DLLEXPORT void jl_lambda_info_set_ast(jl_lambda_info_t *li, jl_value_t *ast)
     jl_value_t *gensym_types = jl_lam_gensyms((jl_expr_t*)ast);
     size_t ngensym = (jl_is_array(gensym_types) ? jl_array_len(gensym_types) : jl_unbox_long(gensym_types));
     li->slotnames = jl_alloc_cell_1d(nslots);
-    li->slottypes = jl_alloc_cell_1d(nslots);
+    li->slottypes = jl_nothing;
     li->slotflags = jl_alloc_array_1d(jl_array_uint8_type, nslots);
-    li->gensymtypes = jl_alloc_cell_1d(ngensym);
+    li->gensymtypes = jl_box_long(ngensym);
     int i;
     for(i=0; i < nslots; i++) {
         jl_value_t *vi = jl_cellref(vis, i);
@@ -329,11 +329,7 @@ JL_DLLEXPORT void jl_lambda_info_set_ast(jl_lambda_info_t *li, jl_value_t *ast)
             }
         }
         jl_cellset(li->slotnames, i, name);
-        jl_cellset(li->slottypes, i, jl_any_type);//jl_cellref(vi, 1));
         jl_array_uint8_set(li->slotflags, i, jl_unbox_long(jl_cellref(vi, 2)));
-    }
-    for(i=0; i < ngensym; i++) {
-        jl_cellset(li->gensymtypes, i, jl_any_type);
     }
     jl_lambda_info_init_properties(li);
 }
@@ -346,7 +342,8 @@ jl_lambda_info_t *jl_new_lambda_info(jl_value_t *ast, jl_svec_t *tvars, jl_svec_
         (jl_lambda_info_t*)newobj((jl_value_t*)jl_lambda_info_type,
                                   NWORDS(sizeof(jl_lambda_info_t)));
     li->code = NULL;
-    li->slotnames = li->slottypes = li->slotflags = li->gensymtypes = NULL;
+    li->slotnames = li->slotflags = NULL;
+    li->slottypes = li->gensymtypes = NULL;
     li->rettype = (jl_value_t*)jl_any_type;
     li->file = null_sym;
     li->module = ctx;

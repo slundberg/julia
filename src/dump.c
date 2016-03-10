@@ -1427,9 +1427,9 @@ static jl_value_t *jl_deserialize_value_(ios_t *s, jl_value_t *vtag, jl_value_t 
             arraylist_push(&backref_list, li);
         li->code = (jl_array_t*)jl_deserialize_value(s, (jl_value_t**)&li->code); jl_gc_wb(li, li->code);
         li->slotnames = (jl_array_t*)jl_deserialize_value(s, (jl_value_t**)&li->slotnames); jl_gc_wb(li, li->slotnames);
-        li->slottypes = (jl_array_t*)jl_deserialize_value(s, (jl_value_t**)&li->slottypes); jl_gc_wb(li, li->slottypes);
+        li->slottypes = jl_deserialize_value(s, &li->slottypes); jl_gc_wb(li, li->slottypes);
         li->slotflags = (jl_array_t*)jl_deserialize_value(s, (jl_value_t**)&li->slotflags); jl_gc_wb(li, li->slotflags);
-        li->gensymtypes = (jl_array_t*)jl_deserialize_value(s, (jl_value_t**)&li->gensymtypes); jl_gc_wb(li, li->gensymtypes);
+        li->gensymtypes = jl_deserialize_value(s, &li->gensymtypes); jl_gc_wb(li, li->gensymtypes);
         li->rettype = jl_deserialize_value(s, &li->rettype);
         jl_gc_wb(li, li->rettype);
         li->sparam_syms = (jl_svec_t*)jl_deserialize_value(s, (jl_value_t**)&li->sparam_syms);

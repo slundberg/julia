@@ -313,7 +313,7 @@ function serialize(s::SerializationState, linfo::LambdaInfo)
     serialize(s, linfo.slotnames)
     serialize(s, linfo.slottypes)
     serialize(s, linfo.slotflags)
-    serialize(s, length(linfo.gensymtypes))
+    serialize(s, linfo.gensymtypes)
     if isdefined(linfo.def, :roots)
         serialize(s, linfo.def.roots::Vector{Any})
     else
@@ -562,7 +562,7 @@ function deserialize(s::SerializationState, ::Type{LambdaInfo})
     slotnames = deserialize(s)
     slottypes = deserialize(s)
     slotflags = deserialize(s)
-    ngensym = deserialize(s)
+    gensymtypes = deserialize(s)
     roots = deserialize(s)::Vector{Any}
     sparam_syms = deserialize(s)::SimpleVector
     sparam_vals = deserialize(s)::SimpleVector
@@ -579,7 +579,7 @@ function deserialize(s::SerializationState, ::Type{LambdaInfo})
         linfo.slotnames = slotnames
         linfo.slottypes = slottypes
         linfo.slotflags = slotflags
-        linfo.gensymtypes = Any[ Any for i=1:ngensym ]
+        linfo.gensymtypes = gensymtypes
         linfo.roots = roots
         linfo.sparam_syms = sparam_syms
         linfo.sparam_vals = sparam_vals

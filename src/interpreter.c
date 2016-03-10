@@ -119,7 +119,7 @@ static int jl_linfo_nslots(jl_lambda_info_t *li)
 
 static int jl_linfo_ngensyms(jl_lambda_info_t *li)
 {
-    return jl_array_len(li->gensymtypes);
+    return jl_is_long(li->gensymtypes) ? jl_unbox_long(li->gensymtypes) : jl_array_len(li->gensymtypes);
 }
 
 static jl_value_t *eval(jl_value_t *e, jl_value_t **locals, jl_lambda_info_t *lam)

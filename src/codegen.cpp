@@ -4069,8 +4069,7 @@ static void emit_function(jl_lambda_info_t *lam, jl_llvm_functions_t *declaratio
     ctx.spvals_ptr = NULL;
 
     // step 2. process var-info lists to see what vars need boxing
-    jl_array_t *gensym_types = lam->gensymtypes;
-    int n_gensyms = jl_array_len(gensym_types);
+    int n_gensyms = jl_is_long(lam->gensymtypes) ? jl_unbox_long(lam->gensymtypes) : jl_array_len(lam->gensymtypes);
     size_t largslen = lam->nargs;
     size_t vinfoslen = jl_array_dim0(lam->slotnames);
     ctx.slots.resize(vinfoslen);
@@ -4114,7 +4113,7 @@ static void emit_function(jl_lambda_info_t *lam, jl_llvm_functions_t *declaratio
         varinfo.isSA = (jl_vinfo_sa(flags)!=0);
         varinfo.usedUndef = (jl_vinfo_usedundef(flags)!=0) || (!varinfo.isArgument && !lam->inferred);
         if (!varinfo.isArgument || varinfo.isAssigned) {
-            jl_value_t *typ = jl_cellref(lam->slottypes,i);
+            jl_value_t *typ = jl_is_array(lam->slottypes) ? jl_cellref(lam->slottypes,i) : (jl_value_t*)jl_any_type;
             if (!jl_is_type(typ))
                 typ = (jl_value_t*)jl_any_type;
             varinfo.value = mark_julia_type((Value*)NULL, false, typ, &ctx);

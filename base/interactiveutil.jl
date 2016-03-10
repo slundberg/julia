@@ -229,7 +229,9 @@ function code_warntype(io::IO, f, t::ANY)
         println(emph_io, "Variables:")
         for i = 1:length(li.slotnames)
             print(emph_io, "  ", li.slotnames[i])
-            show_expr_type(emph_io, li.slottypes[i], true)
+            if isa(li.slottypes,Array)
+                show_expr_type(emph_io, li.slottypes[i], true)
+            end
             print(emph_io, '\n')
         end
         print(emph_io, "\nBody:\n  ")
