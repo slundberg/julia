@@ -72,7 +72,9 @@ Library improvements
   * Linear algebra:
 
     * All dimensions indexed by scalars are now dropped, whereas previously only
-      trailing scalar dimensions would be omitted from the result.
+      trailing scalar dimensions would be omitted from the result ([#13612]).
+
+    * Dimensions indexed by multidimensional arrays add dimensions. More generally, the dimensionality of the result is the sum of the dimensionalities of the indices ([#15431]).
 
     * New `normalize` and `normalize!` convenience functions for normalizing
       vectors ([#13681]).
@@ -1781,6 +1783,7 @@ Too numerous to mention.
 [#13480]: https://github.com/JuliaLang/julia/issues/13480
 [#13496]: https://github.com/JuliaLang/julia/issues/13496
 [#13542]: https://github.com/JuliaLang/julia/issues/13542
+[#13612]: https://github.com/JuliaLang/julia/issues/13612
 [#13680]: https://github.com/JuliaLang/julia/issues/13680
 [#13681]: https://github.com/JuliaLang/julia/issues/13681
 [#13780]: https://github.com/JuliaLang/julia/issues/13780
@@ -1793,4 +1796,7 @@ Too numerous to mention.
 [#14469]: https://github.com/JuliaLang/julia/issues/14469
 [#14759]: https://github.com/JuliaLang/julia/issues/14759
 [#14798]: https://github.com/JuliaLang/julia/issues/14798
+[#15192]: https://github.com/JuliaLang/julia/issues/15192
 [#15242]: https://github.com/JuliaLang/julia/issues/15242
+[#15258]: https://github.com/JuliaLang/julia/issues/15258
+[#15430]: https://github.com/JuliaLang/julia/issues/15431
