@@ -647,6 +647,19 @@ STATIC_INLINE jl_value_t *jl_cellset(void *a, size_t i, void *x)
     return (jl_value_t*)x;
 }
 
+STATIC_INLINE uint8_t jl_array_uint8_ref(void *a, size_t i)
+{
+    assert(i < jl_array_len(a));
+    assert(jl_typeis(a, jl_array_uint8_type));
+    return ((uint8_t*)(jl_array_data(a)))[i];
+}
+STATIC_INLINE void jl_array_uint8_set(void *a, size_t i, uint8_t x)
+{
+    assert(i < jl_array_len(a));
+    assert(jl_typeis(a, jl_array_uint8_type));
+    ((uint8_t*)(jl_array_data(a)))[i] = x;
+}
+
 #define jl_exprarg(e,n) (((jl_value_t**)jl_array_data(((jl_expr_t*)(e))->args))[n])
 #define jl_exprargset(e, n, v) jl_cellset(((jl_expr_t*)(e))->args, n, v)
 #define jl_expr_nargs(e) jl_array_len(((jl_expr_t*)(e))->args)
@@ -1241,19 +1254,19 @@ JL_DLLEXPORT jl_array_t *jl_uncompress_ast(jl_lambda_info_t *li, jl_array_t *dat
 JL_DLLEXPORT int jl_is_operator(char *sym);
 JL_DLLEXPORT int jl_operator_precedence(char *sym);
 
-STATIC_INLINE int jl_vinfo_assigned(jl_value_t *vi)
+STATIC_INLINE int jl_vinfo_assigned(uint8_t vi)
 {
-    return (jl_unbox_long(vi)&2)!=0;
+    return (vi&2)!=0;
 }
 
-STATIC_INLINE int jl_vinfo_sa(jl_value_t *vi)
+STATIC_INLINE int jl_vinfo_sa(uint8_t vi)
 {
-    return (jl_unbox_long(vi)&16)!=0;
+    return (vi&16)!=0;
 }
 
-STATIC_INLINE int jl_vinfo_usedundef(jl_value_t *vi)
+STATIC_INLINE int jl_vinfo_usedundef(uint8_t vi)
 {
-    return (jl_unbox_long(vi)&32)!=0;
+    return (vi&32)!=0;
 }
 
 // calling into julia ---------------------------------------------------------

@@ -518,6 +518,8 @@ static void jl_serialize_datatype(ios_t *s, jl_datatype_t *dt)
         tag = 3;
     else if (dt == jl_int64_type)
         tag = 4;
+    else if (dt == jl_uint8_type)
+        tag = 8;
     writetag(s, (jl_value_t*)SmallDataType_tag);
     write_uint8(s, 0); // virtual size
     jl_serialize_value(s, (jl_value_t*)jl_datatype_type);
@@ -1185,6 +1187,8 @@ static jl_value_t *jl_deserialize_datatype(ios_t *s, int pos, jl_value_t **loc)
         dt = jl_bool_type;
     else if (tag == 4)
         dt = jl_int64_type;
+    else if (tag == 8)
+        dt = jl_uint8_type;
     else
         dt = jl_new_uninitialized_datatype(nf, fielddesc_type);
     assert(tree_literal_values==NULL && mode != MODE_AST);
@@ -2402,7 +2406,7 @@ void jl_init_serializer(void)
                      jl_box_int32(39), jl_box_int32(40), jl_box_int32(41),
                      jl_box_int32(42), jl_box_int32(43), jl_box_int32(44),
                      jl_box_int32(45), jl_box_int32(46), jl_box_int32(47),
-                     jl_box_int32(48), jl_box_int32(49), jl_box_int32(50),
+                     jl_box_int32(48), jl_box_int32(49),
 #endif
                      jl_box_int64(0), jl_box_int64(1), jl_box_int64(2),
                      jl_box_int64(3), jl_box_int64(4), jl_box_int64(5),
@@ -2421,7 +2425,7 @@ void jl_init_serializer(void)
                      jl_box_int64(39), jl_box_int64(40), jl_box_int64(41),
                      jl_box_int64(42), jl_box_int64(43), jl_box_int64(44),
                      jl_box_int64(45), jl_box_int64(46), jl_box_int64(47),
-                     jl_box_int64(48), jl_box_int64(49), jl_box_int64(50),
+                     jl_box_int64(48), jl_box_int64(49),
 #endif
                      jl_labelnode_type, jl_linenumbernode_type,
                      jl_gotonode_type, jl_quotenode_type, jl_topnode_type,
@@ -2433,7 +2437,7 @@ void jl_init_serializer(void)
                      jl_ANY_flag, jl_array_any_type, jl_intrinsic_type, jl_method_type,
                      jl_methtable_type, jl_voidpointer_type, jl_newvarnode_type,
                      jl_array_symbol_type, jl_anytuple_type, jl_tparam0(jl_anytuple_type),
-                     jl_typeof(jl_emptytuple),
+                     jl_typeof(jl_emptytuple), jl_array_uint8_type,
                      jl_symbol_type->name, jl_gensym_type->name, jl_tuple_typename,
                      jl_ref_type->name, jl_pointer_type->name, jl_simplevector_type->name,
                      jl_datatype_type->name, jl_uniontype_type->name, jl_array_type->name,

@@ -4108,7 +4108,7 @@ static void emit_function(jl_lambda_info_t *lam, jl_llvm_functions_t *declaratio
 
     for(i=0; i < vinfoslen; i++) {
         jl_varinfo_t &varinfo = ctx.slots[i];
-        jl_value_t *flags = jl_cellref(lam->slotflags,i);
+        uint8_t flags = jl_array_uint8_ref(lam->slotflags, i);
         varinfo.isAssigned = (jl_vinfo_assigned(flags)!=0);
         varinfo.escapes = false;
         varinfo.isSA = (jl_vinfo_sa(flags)!=0);

@@ -3370,6 +3370,10 @@ void jl_init_types(void)
     jl_int64_type = jl_new_bitstype((jl_value_t*)jl_symbol("Int64"),
                                     jl_any_type, jl_emptysvec, 64);
 
+    jl_uint8_type = NULL;
+    jl_uint8_type = jl_new_bitstype((jl_value_t*)jl_symbol("UInt8"),
+                                    jl_any_type, jl_emptysvec, 8);
+
     jl_gensym_type = jl_new_datatype(jl_symbol("GenSym"), jl_any_type, jl_emptysvec,
                                      jl_svec1(jl_symbol("id")),
                                      jl_svec1(jl_long_type), 0, 0, 1);
@@ -3430,6 +3434,9 @@ void jl_init_types(void)
         (jl_value_t*)jl_apply_type((jl_value_t*)jl_array_type,
                                    jl_svec(2, jl_symbol_type,
                                             jl_box_long(1)));
+
+    jl_array_uint8_type = jl_apply_type((jl_value_t*)jl_array_type,
+                                        jl_svec2(jl_uint8_type, jl_box_long(1)));
 
     jl_expr_type =
         jl_new_datatype(jl_symbol("Expr"),
@@ -3501,7 +3508,7 @@ void jl_init_types(void)
                                 jl_symbol("pure"), jl_symbol("isva"),
                                 jl_symbol("inInference")),
                         jl_svec(23, jl_any_type, jl_array_any_type,
-                                jl_array_any_type, jl_array_any_type,
+                                jl_array_any_type, jl_array_uint8_type,
                                 jl_array_any_type, jl_any_type,
                                 jl_simplevector_type, jl_simplevector_type,
                                 jl_any_type, jl_sym_type,
