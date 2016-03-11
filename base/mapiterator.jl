@@ -1,30 +1,5 @@
 # This file is a part of Julia. License is MIT: http://julialang.org/license
 
-
-"""
-    MapIterator(f, c...) -> iterator
-
-`collect(MapIterator(f, c...))` is equivalent to `map(f, c...)`.
-"""
-type MapIterator
-    f::Union{Function,Type}
-    arg_itr
-end
-
-MapIterator(f, c...) = MapIterator(f, zip(c...))
-
-
-start(itr::MapIterator) = start(itr.arg_itr)
-
-done(itr::MapIterator, state) = done(itr.arg_itr, state)
-
-function next(itr::MapIterator, state)
-    args, state = next(itr.arg_itr, state)
-    itr.f(args...), state
-end
-
-
-
 """
     AsyncMapIterator(f, results, c...; ntasks=100) -> iterator
 
@@ -168,3 +143,5 @@ function next(itr::StreamMapIterator, state::StreamMapState)
 
     return (r, state)
 end
+
+iteratorsize(::Type{StreamMapIterator}) = SizeUnknown()
