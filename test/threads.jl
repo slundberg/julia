@@ -229,3 +229,21 @@ function test_fence()
     @test commbuf.correct[2] == true
 end
 test_fence()
+
+let async = AsyncCondition(),
+    t = Timer(0.015)
+
+    @async begin
+        wait(t)
+        ccall(:uv_async_send, Void, (Ptr{Void},), async)
+    end
+    @test 0.01 < @elapsed wait(async)
+    @test isopen(async)
+    @test !isopen(t)
+    close(t)
+    close(async)
+    @test_throws EOFError wait(async)
+    @test !isopen(async)
+    @test_throws EOFError wait(t)
+    @test_throws EOFError wait(async)
+end

@@ -325,16 +325,17 @@ include("docs/Docs.jl")
 using .Docs
 using .Markdown
 
+# threads
+include("threads.jl")
+include("threadcall.jl")
+import .Threads: Timer, sleep # these are exported from Base instead of Threads
+
 # deprecated functions
 include("deprecated.jl")
 
 # Some basic documentation
 include("docs/helpdb.jl")
 include("docs/basedocs.jl")
-
-# threads
-include("threads.jl")
-include("threadcall.jl")
 
 function __init__()
     # Base library init

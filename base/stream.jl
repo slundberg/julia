@@ -293,8 +293,6 @@ function init_stdio(handle::Ptr{Void})
 end
 
 function reinit_stdio()
-    global uv_jl_asynccb       = cfunction(uv_asynccb, Void, (Ptr{Void},))
-    global uv_jl_timercb       = cfunction(uv_timercb, Void, (Ptr{Void},))
     global uv_jl_alloc_buf     = cfunction(uv_alloc_buf, Void, (Ptr{Void}, Csize_t, Ptr{Void}))
     global uv_jl_readcb        = cfunction(uv_readcb, Void, (Ptr{Void}, Cssize_t, Ptr{Void}))
     global uv_jl_connectioncb  = cfunction(uv_connectioncb, Void, (Ptr{Void}, Cint))
@@ -605,126 +603,6 @@ show(io::IO, stream::Pipe) = print(io,
     uv_status_string(stream.out), ", ",
     nb_available(stream), " bytes waiting)")
 
-##########################################
-# Async Worker
-##########################################
-
-type SingleAsyncWork
-    handle::Ptr{Void}
-    cb::Function
-    function SingleAsyncWork(cb::Function)
-        this = new(Libc.malloc(_sizeof_uv_async), cb)
-        associate_julia_struct(this.handle, this)
-        preserve_handle(this)
-        err = ccall(:uv_async_init,Cint,(Ptr{Void},Ptr{Void},Ptr{Void}),eventloop(),this.handle,uv_jl_asynccb::Ptr{Void})
-        this
-    end
-end
-
-close(t::SingleAsyncWork) = ccall(:jl_close_uv,Void,(Ptr{Void},),t.handle)
-
-_uv_hook_close(uv::SingleAsyncWork) = (uv.handle = C_NULL; unpreserve_handle(uv); nothing)
-
-function uv_asynccb(handle::Ptr{Void})
-    async = @handle_as handle SingleAsyncWork
-    try
-        async.cb(async)
-    catch
-    end
-    nothing
-end
-
-##########################################
-# Timer
-##########################################
-
-type Timer
-    handle::Ptr{Void}
-    cond::Condition
-    isopen::Bool
-
-    function Timer(timeout::Real, repeat::Real=0.0)
-        timeout ≥ 0 || throw(ArgumentError("timer cannot have negative timeout of $timeout seconds"))
-        repeat ≥ 0 || throw(ArgumentError("timer cannot have negative repeat interval of $repeat seconds"))
-
-        this = new(Libc.malloc(_sizeof_uv_timer), Condition(), true)
-        err = ccall(:uv_timer_init,Cint,(Ptr{Void},Ptr{Void}),eventloop(),this.handle)
-        if err != 0
-            #TODO: this codepath is currently not tested
-            Libc.free(this.handle)
-            this.handle = C_NULL
-            throw(UVError("uv_make_timer",err))
-        end
-
-        associate_julia_struct(this.handle, this)
-        preserve_handle(this)
-
-        ccall(:uv_update_time, Void, (Ptr{Void},), eventloop())
-        ccall(:uv_timer_start, Cint, (Ptr{Void},Ptr{Void},UInt64,UInt64),
-              this.handle, uv_jl_timercb::Ptr{Void},
-              UInt64(round(timeout*1000))+1, UInt64(round(repeat*1000)))
-        return this
-    end
-end
-
-wait(t::Timer) = wait(t.cond)
-
-isopen(t::Timer) = t.isopen
-
-function close(t::Timer)
-    if t.handle != C_NULL
-        t.isopen = false
-        ccall(:uv_timer_stop, Cint, (Ptr{Void},), t.handle)
-        ccall(:jl_close_uv, Void, (Ptr{Void},), t.handle)
-    end
-    nothing
-end
-
-function _uv_hook_close(t::Timer)
-    unpreserve_handle(t)
-    disassociate_julia_struct(t)
-    t.handle = C_NULL
-    t.isopen = false
-    notify_error(t.cond, EOFError())
-    nothing
-end
-
-function uv_timercb(handle::Ptr{Void})
-    t = @handle_as handle Timer
-    if ccall(:uv_timer_get_repeat, UInt64, (Ptr{Void},), t.handle) == 0
-        # timer is stopped now
-        close(t)
-    end
-    notify(t.cond)
-    nothing
-end
-
-function sleep(sec::Real)
-    sec ≥ 0 || throw(ArgumentError("cannot sleep for $sec seconds"))
-    wait(Timer(sec))
-    nothing
-end
-
-# timer with repeated callback
-function Timer(cb::Function, timeout::Real, repeat::Real=0.0)
-    t = Timer(timeout, repeat)
-    waiter = @task begin
-        while isopen(t)
-            success = try
-                wait(t)
-                true
-            catch # ignore possible exception on close()
-                false
-            end
-            success && cb(t)
-        end
-    end
-    # must start the task right away so that it can wait for the Timer before
-    # we re-enter the event loop. this avoids a race condition. see issue #12719
-    enq_work(current_task())
-    yieldto(waiter)
-    return t
-end
 
 ## event loop ##
 eventloop() = global uv_eventloop::Ptr{Void}
