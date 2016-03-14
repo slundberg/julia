@@ -3902,3 +3902,17 @@ let
     arrayset_unknown_dim(Int, 2)
     arrayset_unknown_dim(Int, 3)
 end
+
+# issue #1784
+let a = [false]
+function foo1784()
+    (a,b) = try
+        return true
+        (0,1)
+    finally
+         a[1] = true
+    end
+end
+@test foo1784()
+@test a[1] == true
+end
