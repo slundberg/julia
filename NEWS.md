@@ -35,6 +35,12 @@ Language changes
   * `A <: B` is parsed as `Expr(:(<:), :A, :B)` in all cases ([#9503]). This also applies to the
     `>:` operator.
 
+  * Simple 2-argument comparisons like `A < B` are parsed as calls intead of using the
+    `:comparison` expression type.
+
+  * A semicolon is now required when writing a `for` loop on one line, e.g.
+    `for i = 1:n; s += x; end`.
+
 Command-line option changes
 ---------------------------
 
