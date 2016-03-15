@@ -852,7 +852,7 @@ bool jl_dylib_DI_for_fptr(size_t pointer, const llvm::object::ObjectFile **obj, 
 #elif defined(LLVM36)
                     *context = DIContext::getDWARFContext(**obj);
 #else
-                    *context = DIContext::getDWARFContext(*obj);
+                    *context = DIContext::getDWARFContext(const_cast<object::ObjectFile*>(*obj));
 #endif
                     *slide = -(int64_t)fbase;
 #ifdef _OS_DARWIN_
@@ -1064,8 +1064,8 @@ void jl_getFunctionInfo(char **name, char **filename, size_t *line,
         *outer_linfo = jl_jit_events->lookupLinfo(pointer);
         lookup_pointer(context, name, line, filename, inlinedat_line, inlinedat_file, pointer+slide, 1, fromC);
         jl_cleanup_DI(context);
+        return;
     }
-
 #else // !USE_MCJIT
 // Without MCJIT we use the FuncInfo structure containing address maps
     std::map<size_t, FuncInfo, revcomp> &info = jl_jit_events->getMap();
@@ -1136,12 +1136,13 @@ void jl_getFunctionInfo(char **name, char **filename, size_t *line,
             jl_copy_str(inlinedat_file, inlinescope.getFilename().str().c_str());
             *inlinedat_line = inlineloc.getLine();
         }
+        uv_rwlock_wrunlock(&threadsafe);
+        return;
     }
+    uv_rwlock_wrunlock(&threadsafe);
 #endif // USE_MCJIT
 
-    else {
-        jl_getDylibFunctionInfo(name, filename, line, inlinedat_file, inlinedat_line, outer_linfo, pointer, fromC, skipC, skipInline);
-    }
+    jl_getDylibFunctionInfo(name, filename, line, inlinedat_file, inlinedat_line, outer_linfo, pointer, fromC, skipC, skipInline);
 }
 
 #if defined(LLVM37) && (defined(_OS_LINUX_) || (defined(_OS_DARWIN_) && defined(LLVM_SHLIB)))

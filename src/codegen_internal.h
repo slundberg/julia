@@ -1,11 +1,10 @@
 // Pre-declaration. Definition in disasm.cpp
 extern "C"
 void jl_dump_asm_internal(uintptr_t Fptr, size_t Fsize, int64_t slide,
-#ifdef USE_MCJIT
-                          llvm::DIContext *context,
-#else
+#ifndef USE_MCJIT
                           std::vector<JITEvent_EmittedFunctionDetails::LineStart> lineinfo,
 #endif
+                          llvm::DIContext *context,
 #ifdef LLVM37
                           raw_ostream &rstream
 #else
