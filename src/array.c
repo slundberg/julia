@@ -554,7 +554,7 @@ JL_DLLEXPORT void jl_arrayunset(jl_array_t *a, size_t i)
 // value is 1 if a new buffer is allocated and 0 if it is realloc'd.
 // the caller needs to take care of moving the data from the old buffer
 // to the new one if necessary.
-static int array_resize_buffer2(jl_array_t *a, size_t newlen)
+static int array_resize_buffer(jl_array_t *a, size_t newlen)
 {
     assert(!a->flags.isshared || a->flags.how == 3);
     size_t elsz = a->elsize;
@@ -567,13 +567,11 @@ static int array_resize_buffer2(jl_array_t *a, size_t newlen)
         oldnbytes++;
     }
     int newbuf = 0;
-    char *olddata = (char*)a->data - oldoffsnb;
-    char *newdata;
     if (a->flags.how == 2) {
         // already malloc'd - use realloc
-        newdata = (char*)jl_gc_managed_realloc(olddata, nbytes, oldnbytes,
-                                               a->flags.isaligned,
-                                               (jl_value_t*)a);
+        char *olddata = (char*)a->data - oldoffsnb;
+        a->data = jl_gc_managed_realloc(olddata, nbytes, oldnbytes,
+                                        a->flags.isaligned, (jl_value_t*)a);
     }
     else {
         newbuf = 1;
@@ -584,52 +582,20 @@ static int array_resize_buffer2(jl_array_t *a, size_t newlen)
             elsz > 4
 #endif
             ) {
-            newdata = (char*)jl_gc_managed_malloc(nbytes);
+            a->data = jl_gc_managed_malloc(nbytes);
             jl_gc_track_malloced_array(a);
             a->flags.how = 2;
             a->flags.isaligned = 1;
         }
         else {
-            newdata = (char*)allocb(nbytes);
+            a->data = allocb(nbytes);
             a->flags.how = 1;
+            jl_gc_wb_buf(a, a->data);
         }
     }
-
-    a->data = newdata;
     a->flags.isshared = 0;
-    if (a->flags.how == 1)
-        jl_gc_wb_buf(a, newdata);
     a->maxsize = newlen;
     return newbuf;
-}
-
-// allocate buffer of newlen elements, placing old data at given offset (in #elts)
-//     newlen: new length (#elts), including offset
-//     oldlen: old length (#elts), excluding offset
-//     offs: new offset
-static void array_resize_buffer(jl_array_t *a, size_t newlen, size_t oldlen, size_t offs)
-{
-    size_t es = a->elsize;
-    size_t nbytes = newlen * es;
-    size_t offsnb = offs * es;
-    size_t oldoffsnb = a->offset * es;
-    size_t oldnbytes = oldlen * es;
-    char *olddata = (char*)a->data;
-    int newbuf = array_resize_buffer2(a, newlen);
-    char *newdata = (char*)a->data + offsnb;
-    if (newbuf) {
-        memcpy(newdata, olddata, oldnbytes);
-    }
-    else if (offs != a->offset) {
-        memmove(newdata, (char*)a->data + oldoffsnb, oldnbytes);
-    }
-    if (a->flags.ptrarray) {
-        memset(newdata + oldnbytes, 0, nbytes - oldnbytes - offsnb);
-    }
-    else if (es == 1) {
-        ((char*)a->data)[newlen] = 0;
-    }
-    a->data = newdata;
 }
 
 static void array_try_unshare(jl_array_t *a)
@@ -642,7 +608,7 @@ static void array_try_unshare(jl_array_t *a)
         size_t es = a->elsize;
         size_t nbytes = len * es + (es == 1 ? 1 : 0);
         char *olddata = (char*)a->data;
-        int newbuf = array_resize_buffer2(a, len);
+        int newbuf = array_resize_buffer(a, len);
         assert(newbuf);
         (void)newbuf;
         memcpy(a->data, olddata, nbytes);
@@ -661,18 +627,70 @@ static size_t limit_overallocation(jl_array_t *a, size_t alen, size_t newlen, si
     return newlen;
 }
 
-static void jl_array_grow_at_beg(jl_array_t *ary, size_t idx, size_t inc)
+static void jl_array_grow_at_beg(jl_array_t *a, size_t idx, size_t inc)
 {
-    size_t elsz = ary->elsize;
-    jl_array_grow_beg(ary, inc);
-    if (idx > 0) {
-        char *data = (char*)ary->data;
-        memmove(data, data + inc * elsz, idx * elsz);
+    // designed to handle the case of growing and shrinking at both ends
+    if (a->flags.isshared && a->flags.how != 3)
+        jl_error("cannot resize array with shared data");
+    if (__unlikely(inc == 0)) {
+        // If inc > 0, it will always trigger the slow path and unshare the
+        // buffer
+        array_try_unshare(a);
+        return;
+    }
+    size_t n = a->nrows;
+    size_t newnrows = n + inc;
+    size_t elsz = a->elsize;
+    size_t nbinc = inc * elsz;
+    char *data = (char*)a->data;
+    char *newdata;
+    int need_move2 = 1;
+    if (a->offset >= inc) {
+        assert(!a->flags.isshared);
+        newdata = data - nbinc;
+        a->offset -= inc;
+        need_move2 = 0;
+    }
+    else {
+        size_t oldoffsnb = a->offset * elsz;
+        if (inc > (a->maxsize - n) / 2 - (a->maxsize - n) / 20) {
+            size_t newlen = a->maxsize == 0 ? inc * 2 : a->maxsize * 2;
+            while (n + 2 * inc > newlen - a->offset)
+                newlen *= 2;
+            newlen = limit_overallocation(a, n, newlen, 2 * inc);
+            if (!array_resize_buffer(a, newlen))
+                data = (char*)a->data + oldoffsnb;
+            a->offset = (newlen - newnrows) / 2;
+            newdata = (char*)a->data + a->offset * elsz;
+        }
+        else {
+            assert(!a->flags.isshared);
+            a->offset = (a->maxsize - newnrows) / 2;
+            newdata = data - oldoffsnb + a->offset * elsz;
+        }
+    }
+    size_t nb1 = idx * elsz;
+    // We could use memcpy if resizing allocates a new buffer,
+    // hopefully it's not a particularly important optimization.
+    if (idx > 0)
+        memmove(newdata, data, nb1);
+    if (need_move2)
+        memmove(newdata + nbinc + nb1, data + nb1, n * elsz - nb1);
+#ifdef STORE_ARRAY_LEN
+    a->length = newnrows;
+#endif
+    a->nrows = newnrows;
+    a->data = newdata;
+    if (a->flags.ptrarray) {
+        memset(newdata + nb1, 0, nbinc);
+    } else if (elsz == 1) {
+        newdata[newnrows] = 0;
     }
 }
 
 static void jl_array_grow_at_end(jl_array_t *a, size_t idx, size_t inc)
 {
+    // optimized for the case of only growing and shrinking at the end
     size_t n = jl_array_nrows(a);
     size_t elsz = a->elsize;
     if (a->flags.isshared && a->flags.how != 3)
@@ -686,14 +704,13 @@ static void jl_array_grow_at_end(jl_array_t *a, size_t idx, size_t inc)
     char *data = (char*)a->data;
     size_t nb1 = idx * elsz;
     size_t nbinc = inc * elsz;
-    // optimized for the case of only growing and shrinking at the end
     int need_memmove = n > idx;
     if ((n + inc) > a->maxsize - a->offset) {
         size_t newlen = a->maxsize == 0 ? (inc < 4 ? 4 : inc) : a->maxsize * 2;
         while ((n + inc) > newlen - a->offset)
             newlen *= 2;
         newlen = limit_overallocation(a, n, newlen, inc);
-        int newbuf = array_resize_buffer2(a, newlen);
+        int newbuf = array_resize_buffer(a, newlen);
         char *newdata = (char*)a->data + a->offset * elsz;
         if (newbuf) {
             memcpy(newdata, data, nb1);
@@ -740,47 +757,7 @@ JL_DLLEXPORT void jl_array_grow_end(jl_array_t *a, size_t inc)
 
 JL_DLLEXPORT void jl_array_grow_beg(jl_array_t *a, size_t inc)
 {
-    // For pointer array the memory grown should be zero'd
-    if (inc == 0) return;
-    // designed to handle the case of growing and shrinking at both ends
-    if (a->flags.isshared) array_try_unshare(a);
-    size_t es = a->elsize;
-    size_t incnb = inc*es;
-    if (a->offset >= inc) {
-        a->data = (char*)a->data - incnb;
-        a->offset -= inc;
-    }
-    else {
-        size_t alen = a->nrows;
-        size_t anb = alen*es;
-        if (inc > (a->maxsize-alen)/2 - (a->maxsize-alen)/20) {
-            size_t newlen = a->maxsize==0 ? inc*2 : a->maxsize*2;
-            while (alen+2*inc > newlen-a->offset)
-                newlen *= 2;
-
-            newlen = limit_overallocation(a, alen, newlen, 2*inc);
-            size_t center = (newlen - (alen + inc))/2;
-            array_resize_buffer(a, newlen, alen, center+inc);
-            a->offset = center;
-            a->data = (char*)a->data - incnb;
-        }
-        else {
-            size_t center = (a->maxsize - (alen + inc))/2;
-            char *newdata = (char*)a->data - es*a->offset + es*center;
-            memmove(&newdata[incnb], a->data, anb);
-            a->data = newdata;
-            a->offset = center;
-        }
-    }
-    if (a->flags.ptrarray)
-        memset((char*)a->data, 0, incnb);
-#ifdef STORE_ARRAY_LEN
-    a->length += inc;
-#endif
-    a->nrows += inc;
-    if (a->elsize == 1) {
-        ((char*)a->data)[a->nrows] = 0;
-    }
+    jl_array_grow_at_beg(a, 0, inc);
 }
 
 static size_t jl_array_limit_offset(jl_array_t *a, size_t offset)
